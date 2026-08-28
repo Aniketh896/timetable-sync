@@ -1,0 +1,74 @@
+# Renders the institute's Apps Script schedule apps and pushes the tables into the
+# bridge spreadsheet, which the Term 5 tool reads as ordinary published CSVs.
+#
+# This exists because Apps Script cannot read those apps itself: an /exec URL returns
+# an HtmlService bootstrap whose body is an empty <div id="table">, filled in
+# afterwards by a client-side google.script.run call. UrlFetchApp has no JS engine,
+# so it only ever sees the empty div. A real browser is required — hence this job.
+#
+# The apps need no sign-in, so nothing here holds an institute credential. The only
+# secret is a service-account key scoped to the bridge sheet alone.
+name: Sync Term 5 timetable
+
+on:
+  schedule:
+    # Every 30 minutes. GitHub queues cron on shared runners, so a run can start a
+    # few minutes late — harmless here, since each student's own sync also runs on a
+    # 30-minute cycle and the timetable changes rarely.
+    #
+    # BILLING: Actions minutes are UNLIMITED on public repos. On a PRIVATE repo the
+    # free tier is 2000 min/month, and this job takes ~2-3 min, so a 30-minute cadence
+    # (~1440 runs/month) would run out around the third week. On a private repo use
+    # '0 */2 * * *' (every 2 hours, ~360 runs) instead — a term timetable changes
+    # rarely enough that it makes no practical difference.
+    - cron: '*/30 * * * *'
+  workflow_dispatch:        # lets you force a run from the Actions tab
+
+concurrency:
+  # Never let a slow run overlap the next scheduled one and write the sheet twice.
+  group: sync-timetable
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - uses: browser-actions/setup-chrome@v1
+        id: chrome
+        with:
+          chrome-version: stable
+
+      - name: Install dependencies
+        # package.json pins these; without it npm walks up the tree looking for a
+        # project root and can silently install nothing.
+        run: npm install
+
+      - name: Render the schedule apps
+        env:
+          CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
+        run: node tools/extract-timetable.js
+
+      - name: Push to the bridge sheet
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          BRIDGE_SHEET_ID: ${{ secrets.BRIDGE_SHEET_ID }}
+        run: node tools/push-to-sheet.js
+
+      - name: Upload the CSVs
+        # Kept as artifacts rather than committed: a commit every 30 minutes would
+        # bury the repo's real history, and the bridge sheet is already the source of
+        # truth. These are for diagnosing a bad run.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: extracted-csv
+          path: tools/*.csv
+          retention-days: 7
+          if-no-files-found: ignore
