@@ -1,0 +1,9 @@
+{
+  "name": "timetable-sync-bridge",
+  "private": true,
+  "description": "Renders the institute's Apps Script schedule apps and pushes them into the bridge sheet.",
+  "dependencies": {
+    "googleapis": "^144.0.0",
+    "puppeteer-core": "^23.0.0"
+  }
+}
