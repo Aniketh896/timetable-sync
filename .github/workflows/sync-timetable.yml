@@ -21,7 +21,7 @@ on:
     # (~1440 runs/month) would run out around the third week. On a private repo use
     # '0 */2 * * *' (every 2 hours, ~360 runs) instead — a term timetable changes
     # rarely enough that it makes no practical difference.
-    - cron: '*/30 * * * *'
+    - cron: '7,37 * * * *'
   workflow_dispatch:        # lets you force a run from the Actions tab
 
 concurrency:
